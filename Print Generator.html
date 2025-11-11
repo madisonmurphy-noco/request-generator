@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Print Queue Generator</title>
+<style>
+body { font-family: sans-serif; max-width: 600px; margin: 40px auto; }
+label { display: block; margin-top: 16px; font-weight: 600; }
+select, input { width: 100%; padding: 6px; margin-top: 4px; }
+textarea { width: 100%; height: 80px; margin-top: 20px; }
+.button-group { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.button-group button {
+  padding: 6px 12px; border: 1px solid #aaa; background: #eee; cursor: pointer; border-radius: 4px;
+}
+.button-group button.selected { background: #333; color: #fff; }
+.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<h2>Print Queue Generator</h2>
+
+<!-- Printer -->
+<label>Printer</label>
+<div class="button-group" id="printerGroup">
+  <button data-value=":bambulab:" class="selected">Bambu (FDM)</button>
+  <button data-value=":formlabs:">Formlabs (Resin)</button>
+</div>
+
+<!-- Quantity -->
+<label>Quantity</label>
+<input id="qty" type="number" min="1" value="1">
+
+<!-- Filament Material / Color (Bambu only) -->
+<div id="bambuFields">
+  <label>Filament Type</label>
+  <select id="material"></select>
+
+  <label id="colorLabel">Color</label>
+  <select id="color"></select>
+</div>
+
+<!-- Resin Material (Formlabs only) -->
+<div id="formlabsFields" class="hidden">
+  <label>Resin</label>
+  <select id="resin">
+    <option>Gray (Standard)</option>
+    <option>Clear</option>
+    <option>Durable</option>
+    <option>Elastic 40A</option>
+  </select>
+</div>
+
+<!-- Quality -->
+<label>Quality Level</label>
+<div class="button-group" id="qualityGroup">
+  <button data-value="High">High</button>
+  <button data-value="Standard" class="selected">Standard</button>
+  <button data-value="Draft">Draft</button>
+</div>
+
+<!-- Peoria Pickup -->
+<label>Peoria Pickup</label>
+<div class="button-group" id="pickupGroup">
+  <button data-value="Yes">Yes</button>
+  <button data-value="No" class="selected">No</button>
+</div>
+
+<!-- Urgency -->
+<label>Urgency</label>
+<div class="button-group" id="urgencyGroup">
+  <button data-value="Rush">Rush</button>
+  <button data-value="Normal" class="selected">Normal</button>
+</div>
+
+<textarea id="output" readonly placeholder="Generated Slack message will appear here"></textarea>
+<button onclick="navigator.clipboard.writeText(output.value)">Copy</button>
+<button onclick="generate()">Generate</button>
+
+<script>
+/* Filament database */
+const filamentData = {
+  "PLA Matte": ["Black", "White", "Red"],
+  "PLA Basic": ["Black", "Green", "Orange", "White"],
+  "PLA Translucent": ["Ice Blue"],
+  "PLA Silk+": ["Silver", "Gold"],
+  "PLA-CF": ["Black"],
+  "PETG HF": ["Black", "White"],
+  "PETG Translucent": ["Clear"],
+  "ABS": ["Black", "White", "Silver"],
+  "TPU 85A": ["Neon Orange"],
+  "TPU 95A HF": ["Black"],
+  "TPU AMS": ["Black", "Yellow"],
+  "PC": ["Black", "Transparent"],
+  "PET-CF": ["Black"],
+  "PPA-CF": ["Black"]
+};
+
+/* UI element refs */
+const materialSelect = document.getElementById("material");
+const colorSelect = document.getElementById("color");
+const colorLabel = document.getElementById("colorLabel");
+const bambuFields = document.getElementById("bambuFields");
+const formlabsFields = document.getElementById("formlabsFields");
+
+/* Populate Bambu materials and colors */
+function populateMaterial() {
+  materialSelect.innerHTML = "";
+  for (let m in filamentData) {
+    let opt = document.createElement("option");
+    opt.value = m;
+    opt.textContent = m;
+    materialSelect.appendChild(opt);
+  }
+  updateColors();
+}
+
+/* Update color dropdown when material changes */
+function updateColors() {
+  const mat = materialSelect.value;
+  colorSelect.innerHTML = "";
+  filamentData[mat].forEach(color => {
+    let opt = document.createElement("option");
+    opt.value = color;
+    opt.textContent = color;
+    colorSelect.appendChild(opt);
+  });
+}
+
+materialSelect.addEventListener("change", updateColors);
+
+/* Button group logic */
+function setupButtonGroup(id) {
+  const group = document.getElementById(id);
+  group.addEventListener("click", e => {
+    if (e.target.tagName !== "BUTTON") return;
+    [...group.children].forEach(b => b.classList.remove("selected"));
+    e.target.classList.add("selected");
+    if (id === "printerGroup") togglePrinter(e.target.dataset.value);
+  });
+}
+setupButtonGroup("printerGroup");
+setupButtonGroup("qualityGroup");
+setupButtonGroup("pickupGroup");
+setupButtonGroup("urgencyGroup");
+
+/* Show/hide printer-specific fields */
+function togglePrinter(value) {
+  if (value === ":bambulab:") {
+    bambuFields.classList.remove("hidden");
+    colorLabel.classList.remove("hidden");
+    colorSelect.classList.remove("hidden");
+    formlabsFields.classList.add("hidden");
+    populateMaterial(); // populate Bambu options now
+  } else {
+    bambuFields.classList.add("hidden");
+    colorLabel.classList.add("hidden");
+    colorSelect.classList.add("hidden");
+    formlabsFields.classList.remove("hidden");
+  }
+}
+
+/* Generate output text */
+function generate() {
+  const printer = document.querySelector("#printerGroup .selected").dataset.value;
+  const qty = document.getElementById("qty").value.trim();
+  const quality = document.querySelector("#qualityGroup .selected").dataset.value;
+  const pickup = document.querySelector("#pickupGroup .selected").dataset.value;
+  const urgency = document.querySelector("#urgencyGroup .selected").dataset.value;
+
+  let materialString = "";
+  if (printer === ":bambulab:") {
+    materialString = materialSelect.value + " " + colorSelect.value;
+  } else {
+    materialString = document.getElementById("resin").value;
+  }
+
+  let line = `${printer} Qty ${qty}, ${materialString}, ${quality}`;
+
+  if (pickup === "Yes") line += ", Peoria Pickup";
+
+  // Only show urgency if Rush is selected
+  if (urgency === "Rush") line += ", Rush";
+
+  document.getElementById("output").value = line;
+}
+
+/* Init */
+populateMaterial();
+</script>
+
+</body>
+</html>
